@@ -1,0 +1,2 @@
+# Step 1 uses only the Python standard library. Add pinned third-party packages
+# here only when a later implementation step requires them.

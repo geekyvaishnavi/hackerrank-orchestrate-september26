@@ -41,6 +41,16 @@ Run the starter Python entry point with:
 python3 code/main.py
 ```
 
+### Current development CLI (Step 1)
+
+The current entry point is intentionally a safe scaffold: it validates the configured dataset directory and reports the selected paths, but it does not yet read financial data or write predictions. Use the dry-run mode while building subsequent steps:
+
+```bash
+python3 code/main.py --dataset-dir dataset --output output.csv --audit-dir .audit --dry-run
+```
+
+Available switches are `--dataset-dir`, `--output`, `--audit-dir`, `--use-llm`, `--offline`, and `--dry-run`. `--use-llm` is only an opt-in reserved for later evidence-extraction work; the scaffold writes no files in either mode.
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations
