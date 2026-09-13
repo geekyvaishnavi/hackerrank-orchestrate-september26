@@ -13,6 +13,7 @@ from ingest import OUTPUT_COLUMNS
 from ledger import normalize_ledger_input, reconstruct_effective_financial_state
 from plans import enumerate_plan_candidates
 from recurrence import build_forecast_rules
+from usage import write_offline_usage_report
 
 @dataclass(frozen=True, slots=True)
 class DatasetAudit:
@@ -52,3 +53,4 @@ def generate_output(dataset, output_path: Path, audit_dir: Path) -> None:  # typ
         writer=csv.DictWriter(f,fieldnames=OUTPUT_COLUMNS); writer.writeheader(); writer.writerows(records)
     with (audit_dir/"decisions.jsonl").open("w",encoding="utf-8") as f:
         for item in audits: f.write(json.dumps(item,sort_keys=True)+"\n")
+    write_offline_usage_report(Path(__file__).resolve().parents[1]/"evaluation"/"usage_report.md",len(records))
