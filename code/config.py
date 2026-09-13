@@ -24,6 +24,7 @@ class RunConfig:
     show_rules: bool
     show_capacity: bool
     show_changes: bool
+    validate_output: Path | None
 
 
 def validate_dataset_dir(dataset_dir: Path) -> None:

@@ -20,6 +20,8 @@ from optimize import optimize_spending_changes
 from plans import enumerate_plan_candidates
 from recurrence import build_forecast_rules
 from relationships import build_relationship_graph
+from reporting import generate_output
+from validate import OutputValidationError, validate_output
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--show-rules", action="store_true", help="Include inferred recurrence rules in request inspection.")
     parser.add_argument("--show-capacity", action="store_true", help="Include simulator-verified payment capacity in request inspection.")
     parser.add_argument("--show-changes", action="store_true", help="Show permitted changes for an infeasible plan candidate.")
+    parser.add_argument("--validate-output", type=Path, help="Validate an existing output CSV.")
     return parser
 
 
@@ -115,12 +118,19 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         show_rules=args.show_rules,
         show_capacity=args.show_capacity,
         show_changes=args.show_changes,
+        validate_output=args.validate_output.resolve() if args.validate_output else None,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Step 1 scaffold and return a stable process exit code."""
     config = parse_config(argv)
+    if config.validate_output:
+        try:
+            validate_output(config.validate_output, load_dataset(config.dataset_dir))
+        except (OutputValidationError, OSError, ValueError) as error:
+            print(f"output validation failed: {error}", file=sys.stderr); return 2
+        print("Output validation passed."); return 0
     if config.check_inputs or config.audit_data or config.extract_images or config.extract_messages or config.inspect_request:
         dataset = load_dataset(config.dataset_dir)
         if config.inspect_request:
@@ -198,7 +208,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print(dataset.report.render())
         return 0
-    mode = "dry run" if config.dry_run else "scaffold check"
+    if not config.dry_run:
+        generate_output(load_dataset(config.dataset_dir), config.output_path, config.audit_dir)
+        print(f"Generated output: {config.output_path}")
+        return 0
+    mode = "dry run"
     print(f"Buy or Wait? {mode} succeeded.")
     print(f"Dataset directory: {config.dataset_dir}")
     print(f"Output path: {config.output_path}")
