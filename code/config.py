@@ -16,6 +16,7 @@ class RunConfig:
     use_llm: bool
     offline: bool
     dry_run: bool
+    check_inputs: bool
 
 
 def validate_dataset_dir(dataset_dir: Path) -> None:

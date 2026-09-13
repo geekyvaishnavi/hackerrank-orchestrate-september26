@@ -51,6 +51,12 @@ python3 code/main.py --dataset-dir dataset --output output.csv --audit-dir .audi
 
 Available switches are `--dataset-dir`, `--output`, `--audit-dir`, `--use-llm`, `--offline`, and `--dry-run`. `--use-llm` is only an opt-in reserved for later evidence-extraction work; the scaffold writes no files in either mode.
 
+Validate all participant-facing CSV headers, types, IDs, and references without creating output files:
+
+```bash
+python3 code/main.py --dataset-dir dataset --check-inputs
+```
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations

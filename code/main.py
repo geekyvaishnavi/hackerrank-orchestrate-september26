@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from config import RunConfig, validate_dataset_dir
+from ingest import load_dataset
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate scaffold configuration without writing output or audit files.",
     )
+    parser.add_argument(
+        "--check-inputs",
+        action="store_true",
+        help="Load and validate every participant-facing CSV without writing files.",
+    )
     return parser
 
 
@@ -74,12 +80,17 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         use_llm=args.use_llm,
         offline=args.offline or not args.use_llm,
         dry_run=args.dry_run,
+        check_inputs=args.check_inputs,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Step 1 scaffold and return a stable process exit code."""
     config = parse_config(argv)
+    if config.check_inputs:
+        dataset = load_dataset(config.dataset_dir)
+        print(dataset.report.render())
+        return 0
     mode = "dry run" if config.dry_run else "scaffold check"
     print(f"Buy or Wait? {mode} succeeded.")
     print(f"Dataset directory: {config.dataset_dir}")
