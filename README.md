@@ -87,6 +87,12 @@ Inspect the simulator-verified safe amount and earliest full-payment date:
 python3 code/main.py --dataset-dir dataset --inspect-request request_27 --show-capacity
 ```
 
+Inspect permitted prospective spending changes for an otherwise unsafe supplied plan:
+
+```bash
+python3 code/main.py --dataset-dir dataset --inspect-request request_26 --show-changes
+```
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations

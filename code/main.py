@@ -16,6 +16,8 @@ from decision import calculate_payment_capacity
 from evidence import available_local_ocr, extract_message_facts, resolve_image_evidence, resolve_message_conflicts
 from ingest import load_dataset
 from ledger import normalize_ledger_input, reconstruct_effective_financial_state
+from optimize import optimize_spending_changes
+from plans import enumerate_plan_candidates
 from recurrence import build_forecast_rules
 from relationships import build_relationship_graph
 
@@ -81,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inspect-request", help="Inspect effective state for one evaluation request ID.")
     parser.add_argument("--show-rules", action="store_true", help="Include inferred recurrence rules in request inspection.")
     parser.add_argument("--show-capacity", action="store_true", help="Include simulator-verified payment capacity in request inspection.")
+    parser.add_argument("--show-changes", action="store_true", help="Show permitted changes for an infeasible plan candidate.")
     return parser
 
 
@@ -111,6 +114,7 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         inspect_request=args.inspect_request,
         show_rules=args.show_rules,
         show_capacity=args.show_capacity,
+        show_changes=args.show_changes,
     )
 
 
@@ -146,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Conservative recurrence rules: {len(rules)}")
                 for rule in rules:
                     print(f"  {rule.next_occurrence.isoformat()} {rule.direction.value} {rule.category}: {rule.amount}")
-            if config.show_capacity:
+            if config.show_capacity or config.show_changes:
                 rules = build_forecast_rules(
                     normalized=normalized,
                     converter=CurrencyConverter(dataset.exchange_rates),
@@ -163,6 +167,18 @@ def main(argv: list[str] | None = None) -> int:
                 earliest = capacity.earliest_date_for_full_payment
                 print(f"Amount safe to pay: {capacity.amount_safe_to_pay}")
                 print(f"Earliest full payment: {earliest.isoformat() if earliest else 'none'}")
+                if config.show_changes:
+                    assessments = enumerate_plan_candidates(
+                        request=request, normalized=normalized, state=state, capacity=capacity, rules=rules,
+                    )
+                    infeasible = next((item.candidate for item in assessments if item.candidate is not None and not item.eligible), None)
+                    if infeasible is None:
+                        print("Spending changes: no infeasible eligible candidate to optimize")
+                    else:
+                        result = optimize_spending_changes(
+                            base_candidate=infeasible, state=state, normalized=normalized, rules=rules,
+                        )
+                        print(f"Spending changes: {'|'.join(result.actions) if result.actions else result.reason}")
             return 0
         if config.extract_messages:
             facts = resolve_message_conflicts(extract_message_facts(dataset.messages))

@@ -23,6 +23,7 @@ class RunConfig:
     inspect_request: str | None
     show_rules: bool
     show_capacity: bool
+    show_changes: bool
 
 
 def validate_dataset_dir(dataset_dir: Path) -> None:
