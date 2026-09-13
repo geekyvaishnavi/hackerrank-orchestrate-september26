@@ -57,6 +57,12 @@ Validate all participant-facing CSV headers, types, IDs, and references without 
 python3 code/main.py --dataset-dir dataset --check-inputs
 ```
 
+Build and print the aggregate relationship audit (without exposing message or image contents):
+
+```bash
+python3 code/main.py --dataset-dir dataset --audit-data
+```
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations

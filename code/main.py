@@ -12,6 +12,7 @@ from pathlib import Path
 
 from config import RunConfig, validate_dataset_dir
 from ingest import load_dataset
+from relationships import build_relationship_graph
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,6 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load and validate every participant-facing CSV without writing files.",
     )
+    parser.add_argument(
+        "--audit-data",
+        action="store_true",
+        help="Build and print the aggregate relationship audit without writing files.",
+    )
     return parser
 
 
@@ -81,14 +87,18 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         offline=args.offline or not args.use_llm,
         dry_run=args.dry_run,
         check_inputs=args.check_inputs,
+        audit_data=args.audit_data,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Step 1 scaffold and return a stable process exit code."""
     config = parse_config(argv)
-    if config.check_inputs:
+    if config.check_inputs or config.audit_data:
         dataset = load_dataset(config.dataset_dir)
+        if config.audit_data:
+            print(build_relationship_graph(dataset).audit.render())
+            return 0
         print(dataset.report.render())
         return 0
     mode = "dry run" if config.dry_run else "scaffold check"

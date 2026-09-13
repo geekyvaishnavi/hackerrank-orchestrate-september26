@@ -17,6 +17,7 @@ class RunConfig:
     offline: bool
     dry_run: bool
     check_inputs: bool
+    audit_data: bool
 
 
 def validate_dataset_dir(dataset_dir: Path) -> None:
