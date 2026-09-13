@@ -1,0 +1,21 @@
+# Python bytecode and test/tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments and configuration (never commit credentials)
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Generated local diagnostics and platform metadata
+.audit/
+*.log
+log.txt
+.DS_Store
