@@ -75,6 +75,12 @@ Inspect typed message evidence without applying changes to a ledger:
 python3 code/main.py --dataset-dir dataset --extract-messages --offline
 ```
 
+Inspect the reconstructed effective state for one request, with optional conservative recurrence rules:
+
+```bash
+python3 code/main.py --dataset-dir dataset --inspect-request request_26 --show-rules
+```
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations

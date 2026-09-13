@@ -11,9 +11,11 @@ import sys
 from pathlib import Path
 
 from config import RunConfig, validate_dataset_dir
+from currency import CurrencyConverter
 from evidence import available_local_ocr, extract_message_facts, resolve_image_evidence, resolve_message_conflicts
 from ingest import load_dataset
-from ledger import normalize_ledger_input
+from ledger import normalize_ledger_input, reconstruct_effective_financial_state
+from recurrence import build_forecast_rules
 from relationships import build_relationship_graph
 
 
@@ -75,6 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Extract and summarize typed message facts without applying financial changes.",
     )
+    parser.add_argument("--inspect-request", help="Inspect effective state for one evaluation request ID.")
+    parser.add_argument("--show-rules", action="store_true", help="Include inferred recurrence rules in request inspection.")
     return parser
 
 
@@ -102,14 +106,44 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         audit_data=args.audit_data,
         extract_images=args.extract_images,
         extract_messages=args.extract_messages,
+        inspect_request=args.inspect_request,
+        show_rules=args.show_rules,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Step 1 scaffold and return a stable process exit code."""
     config = parse_config(argv)
-    if config.check_inputs or config.audit_data or config.extract_images or config.extract_messages:
+    if config.check_inputs or config.audit_data or config.extract_images or config.extract_messages or config.inspect_request:
         dataset = load_dataset(config.dataset_dir)
+        if config.inspect_request:
+            try:
+                request = dataset.requests_by_id[config.inspect_request]
+            except KeyError:
+                print(f"unknown evaluation request_id: {config.inspect_request}", file=sys.stderr)
+                return 2
+            normalized = normalize_ledger_input(dataset)
+            facts = resolve_message_conflicts(extract_message_facts(dataset.messages_by_user.get(request.user_id, ())))
+            state = reconstruct_effective_financial_state(
+                normalized=normalized,
+                converter=CurrencyConverter(dataset.exchange_rates),
+                user_id=request.user_id,
+                request_date=request.request_date,
+                message_facts=facts,
+            )
+            print(f"Effective state for {request.request_id}: {len(state.cash_flows)} cash flows, {len(state.reserved_obligations)} reserved obligations")
+            if config.show_rules:
+                rules = build_forecast_rules(
+                    normalized=normalized,
+                    converter=CurrencyConverter(dataset.exchange_rates),
+                    user_id=request.user_id,
+                    as_of_date=request.request_date,
+                    message_facts=facts,
+                )
+                print(f"Conservative recurrence rules: {len(rules)}")
+                for rule in rules:
+                    print(f"  {rule.next_occurrence.isoformat()} {rule.direction.value} {rule.category}: {rule.amount}")
+            return 0
         if config.extract_messages:
             facts = resolve_message_conflicts(extract_message_facts(dataset.messages))
             print(f"Message evidence extraction completed. Resolved facts: {len(facts)}")

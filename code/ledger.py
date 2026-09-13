@@ -14,6 +14,9 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import Mapping, Sequence, TypeVar
 
+from currency import ConversionAudit, ConversionStatus, CurrencyConverter
+from evidence import MessageFact, MessageFactType, resolve_message_conflicts
+
 from domain import (
     Currency,
     Direction,
@@ -118,6 +121,47 @@ class NormalizedLedgerInput:
     payment_options_by_request: Mapping[str, tuple[CanonicalPaymentOption, ...]]
 
 
+@dataclass(frozen=True, slots=True)
+class EffectiveCashRecord:
+    """One dated home-currency cash effect retained by the conservative ledger."""
+
+    source_id: str
+    cash_date: date
+    amount: Decimal
+    kind: str
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class LedgerAuditEntry:
+    """Explain why an event or message was included, reserved, or excluded."""
+
+    source_id: str
+    disposition: str
+    detail: str
+    conversion: ConversionAudit | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EffectiveFinancialState:
+    """Read-only state for one user at one request date; no affordability decision."""
+
+    user_id: str
+    as_of_date: date
+    opening_available_balance: Decimal
+    home_currency: Currency
+    cash_flows: tuple[EffectiveCashRecord, ...]
+    reserved_obligations: tuple[EffectiveCashRecord, ...]
+    audit: tuple[LedgerAuditEntry, ...]
+
+    @property
+    def dated_net_cash_flow(self) -> Mapping[date, Decimal]:
+        totals: dict[date, Decimal] = {}
+        for item in self.cash_flows + self.reserved_obligations:
+            totals[item.cash_date] = totals.get(item.cash_date, Decimal("0")) + item.amount
+        return MappingProxyType(dict(sorted(totals.items())))
+
+
 def normalize_profile_preferences(profile: FinancialProfile) -> NormalizedProfilePreferences:
     """Normalize profile category sets without altering amounts or eligibility."""
     return NormalizedProfilePreferences(
@@ -207,4 +251,121 @@ def normalize_ledger_input(dataset: IngestedDataset) -> NormalizedLedgerInput:
             {option.payment_option_id: option for option in options}
         ),
         payment_options_by_request=_group_by(options, "request_id"),
+    )
+
+
+def reconstruct_effective_financial_state(
+    *,
+    normalized: NormalizedLedgerInput,
+    converter: CurrencyConverter,
+    user_id: str,
+    request_date: date,
+    message_facts: Sequence[MessageFact] = (),
+) -> EffectiveFinancialState:
+    """Build a conservative future cash ledger without selecting a payment plan.
+
+    The profile balance is already the available balance at the decision point,
+    so historical settled transactions are audit-only.  Future obligations and
+    confirmed income remain explicitly dated for the later forecast step.
+    """
+    preferences = normalized.preferences_by_user[user_id]
+    facts = resolve_message_conflicts(tuple(fact for fact in message_facts if fact.user_id == user_id))
+    facts_by_event: dict[str, set[MessageFactType]] = {}
+    for fact in facts:
+        if fact.related_event_id:
+            facts_by_event.setdefault(fact.related_event_id, set()).add(fact.fact_type)
+    transfer_pair_ids: set[str] = set()
+    if any(fact.fact_type is MessageFactType.INTERNAL_TRANSFER for fact in facts):
+        user_events = normalized.events_by_user.get(user_id, ())
+        for debit in user_events:
+            if debit.direction is not Direction.DEBIT or debit.source_amount is None or "transfer" not in debit.description.casefold():
+                continue
+            for credit in user_events:
+                if (
+                    credit.direction is Direction.CREDIT
+                    and credit.source_amount == debit.source_amount
+                    and credit.currency is debit.currency
+                    and credit.cash_date == debit.cash_date
+                    and "transfer" in credit.description.casefold()
+                ):
+                    transfer_pair_ids.update((debit.event_id, credit.event_id))
+    flows: list[EffectiveCashRecord] = []
+    reserved: list[EffectiveCashRecord] = []
+    audit: list[LedgerAuditEntry] = []
+    for event in normalized.events_by_user.get(user_id, ()):
+        if event.event_id in transfer_pair_ids:
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "evidence-confirmed internal transfer pair"))
+            continue
+        types = facts_by_event.get(event.event_id, set())
+        status = EventStatus.SETTLED if MessageFactType.EVENT_SETTLED in types else event.status
+        retry = MessageFactType.FAILED_DEBIT_RETRY in types
+        if event.direction is Direction.NON_CASH or event.event_type is EventType.INVESTMENT_VALUATION:
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "non-cash or unrealized valuation"))
+            continue
+        if event.source_amount is None:
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "amount unresolved; never treated as zero"))
+            continue
+        if status in (EventStatus.CANCELLED, EventStatus.UNREALIZED):
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", f"{status.value} event"))
+            continue
+        if status is EventStatus.FAILED and not retry:
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "failed debit without confirmed retry"))
+            continue
+        if event.cash_date < request_date and not (status is EventStatus.PENDING or retry):
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "settled before request date"))
+            continue
+        conversion = converter.convert_with_audit(
+            source_id=event.event_id,
+            amount=event.source_amount,
+            from_currency=event.currency,
+            to_currency=preferences.home_currency,
+            rate_date=event.cash_date,
+        )
+        if conversion.status is ConversionStatus.MISSING_RATE:
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "missing dated FX rate", conversion))
+            continue
+        amount = conversion.converted_amount
+        assert amount is not None
+        signed = -amount if event.direction is Direction.DEBIT else amount
+        record = EffectiveCashRecord(event.event_id, event.cash_date, signed, "event", status.value)
+        if event.direction is Direction.DEBIT and (status is EventStatus.PENDING or retry):
+            reserved.append(record)
+            audit.append(LedgerAuditEntry(event.event_id, "reserved", "pending debit or confirmed retry", conversion))
+        elif event.direction is Direction.CREDIT and status is EventStatus.PENDING:
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "pending credit is not available cash", conversion))
+        elif event.direction is Direction.CREDIT and status is EventStatus.SCHEDULED and event.event_type is not EventType.INCOME:
+            audit.append(LedgerAuditEntry(event.event_id, "excluded", "scheduled non-income credit is unconfirmed", conversion))
+        else:
+            flows.append(record)
+            audit.append(LedgerAuditEntry(event.event_id, "included", "dated cash event", conversion))
+    for fact in facts:
+        if fact.fact_type is not MessageFactType.CONFIRMED_INCOME:
+            continue
+        if fact.amount is None or fact.currency is None or fact.effective_date is None:
+            audit.append(LedgerAuditEntry(fact.message_id, "excluded", "confirmed-income message lacks amount, currency, or date"))
+            continue
+        if fact.effective_date < request_date:
+            audit.append(LedgerAuditEntry(fact.message_id, "excluded", "confirmed-income date precedes request"))
+            continue
+        conversion = converter.convert_with_audit(
+            source_id=fact.message_id,
+            amount=fact.amount,
+            from_currency=fact.currency,
+            to_currency=preferences.home_currency,
+            rate_date=fact.effective_date,
+        )
+        if conversion.status is ConversionStatus.MISSING_RATE:
+            audit.append(LedgerAuditEntry(fact.message_id, "excluded", "missing dated FX rate", conversion))
+            continue
+        assert conversion.converted_amount is not None
+        flows.append(EffectiveCashRecord(fact.message_id, fact.effective_date, conversion.converted_amount, "confirmed_income", "message-confirmed"))
+        audit.append(LedgerAuditEntry(fact.message_id, "included", "message-confirmed income", conversion))
+    return EffectiveFinancialState(
+        user_id=user_id,
+        as_of_date=request_date,
+        opening_available_balance=preferences.current_available_balance,
+        home_currency=preferences.home_currency,
+        cash_flows=tuple(sorted(flows, key=lambda item: (item.cash_date, item.source_id))),
+        reserved_obligations=tuple(sorted(reserved, key=lambda item: (item.cash_date, item.source_id))),
+        audit=tuple(sorted(audit, key=lambda item: item.source_id)),
     )

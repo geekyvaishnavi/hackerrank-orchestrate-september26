@@ -12,11 +12,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Mapping, Protocol, Sequence
+from typing import TYPE_CHECKING, Mapping, Protocol, Sequence
 
 from domain import Currency, Direction, EventStatus, ImageReference, parse_money
 from ingest import IngestedDataset
-from ledger import CanonicalEvent, NormalizedLedgerInput
+if TYPE_CHECKING:
+    from ledger import CanonicalEvent, NormalizedLedgerInput
 
 
 class ImageResolutionStatus(str, Enum):
@@ -152,6 +153,7 @@ def extract_message_facts(messages: Sequence) -> tuple[MessageFact, ...]:
         if is_salary and amount_currency and (
             "increased to" in lower
             or "monthly pay is" in lower
+            or "temporary monthly pay is" in lower
             or "next salary is reduced to" in lower
             or "confirmed base salary" in lower
             or "gaji bulanan anda naik menjadi" in lower
