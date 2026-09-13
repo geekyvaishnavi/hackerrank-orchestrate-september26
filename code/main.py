@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from config import RunConfig, validate_dataset_dir
-from evidence import available_local_ocr, resolve_image_evidence
+from evidence import available_local_ocr, extract_message_facts, resolve_image_evidence, resolve_message_conflicts
 from ingest import load_dataset
 from ledger import normalize_ledger_input
 from relationships import build_relationship_graph
@@ -70,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resolve image-backed blank amounts with local OCR and report blocked evidence.",
     )
+    parser.add_argument(
+        "--extract-messages",
+        action="store_true",
+        help="Extract and summarize typed message facts without applying financial changes.",
+    )
     return parser
 
 
@@ -96,14 +101,19 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         check_inputs=args.check_inputs,
         audit_data=args.audit_data,
         extract_images=args.extract_images,
+        extract_messages=args.extract_messages,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Step 1 scaffold and return a stable process exit code."""
     config = parse_config(argv)
-    if config.check_inputs or config.audit_data or config.extract_images:
+    if config.check_inputs or config.audit_data or config.extract_images or config.extract_messages:
         dataset = load_dataset(config.dataset_dir)
+        if config.extract_messages:
+            facts = resolve_message_conflicts(extract_message_facts(dataset.messages))
+            print(f"Message evidence extraction completed. Resolved facts: {len(facts)}")
+            return 0
         if config.extract_images:
             report = resolve_image_evidence(
                 dataset=dataset,

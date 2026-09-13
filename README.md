@@ -69,6 +69,12 @@ Run local image-evidence extraction for blank event amounts. Missing OCR or ambi
 python3 code/main.py --dataset-dir dataset --extract-images --offline
 ```
 
+Inspect typed message evidence without applying changes to a ledger:
+
+```bash
+python3 code/main.py --dataset-dir dataset --extract-messages --offline
+```
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations

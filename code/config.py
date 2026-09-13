@@ -19,6 +19,7 @@ class RunConfig:
     check_inputs: bool
     audit_data: bool
     extract_images: bool
+    extract_messages: bool
 
 
 def validate_dataset_dir(dataset_dir: Path) -> None:
