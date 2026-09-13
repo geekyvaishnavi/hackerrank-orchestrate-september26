@@ -12,6 +12,7 @@ from pathlib import Path
 
 from config import RunConfig, validate_dataset_dir
 from currency import CurrencyConverter
+from decision import calculate_payment_capacity
 from evidence import available_local_ocr, extract_message_facts, resolve_image_evidence, resolve_message_conflicts
 from ingest import load_dataset
 from ledger import normalize_ledger_input, reconstruct_effective_financial_state
@@ -79,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--inspect-request", help="Inspect effective state for one evaluation request ID.")
     parser.add_argument("--show-rules", action="store_true", help="Include inferred recurrence rules in request inspection.")
+    parser.add_argument("--show-capacity", action="store_true", help="Include simulator-verified payment capacity in request inspection.")
     return parser
 
 
@@ -108,6 +110,7 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         extract_messages=args.extract_messages,
         inspect_request=args.inspect_request,
         show_rules=args.show_rules,
+        show_capacity=args.show_capacity,
     )
 
 
@@ -143,6 +146,23 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Conservative recurrence rules: {len(rules)}")
                 for rule in rules:
                     print(f"  {rule.next_occurrence.isoformat()} {rule.direction.value} {rule.category}: {rule.amount}")
+            if config.show_capacity:
+                rules = build_forecast_rules(
+                    normalized=normalized,
+                    converter=CurrencyConverter(dataset.exchange_rates),
+                    user_id=request.user_id,
+                    as_of_date=request.request_date,
+                    message_facts=facts,
+                )
+                capacity = calculate_payment_capacity(
+                    state=state,
+                    minimum_balance_to_keep=normalized.preferences_by_user[request.user_id].minimum_balance_to_keep,
+                    requested_amount=request.requested_amount,
+                    rules=rules,
+                )
+                earliest = capacity.earliest_date_for_full_payment
+                print(f"Amount safe to pay: {capacity.amount_safe_to_pay}")
+                print(f"Earliest full payment: {earliest.isoformat() if earliest else 'none'}")
             return 0
         if config.extract_messages:
             facts = resolve_message_conflicts(extract_message_facts(dataset.messages))

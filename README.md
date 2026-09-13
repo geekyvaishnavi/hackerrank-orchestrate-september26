@@ -81,6 +81,12 @@ Inspect the reconstructed effective state for one request, with optional conserv
 python3 code/main.py --dataset-dir dataset --inspect-request request_26 --show-rules
 ```
 
+Inspect the simulator-verified safe amount and earliest full-payment date:
+
+```bash
+python3 code/main.py --dataset-dir dataset --inspect-request request_27 --show-capacity
+```
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations
