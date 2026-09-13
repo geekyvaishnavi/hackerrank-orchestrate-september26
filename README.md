@@ -63,6 +63,12 @@ Build and print the aggregate relationship audit (without exposing message or im
 python3 code/main.py --dataset-dir dataset --audit-data
 ```
 
+Run local image-evidence extraction for blank event amounts. Missing OCR or ambiguous evidence is reported conservatively and does not produce a zero amount:
+
+```bash
+python3 code/main.py --dataset-dir dataset --extract-images --offline
+```
+
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
 
 ## Important File Locations

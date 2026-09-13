@@ -11,7 +11,9 @@ import sys
 from pathlib import Path
 
 from config import RunConfig, validate_dataset_dir
+from evidence import available_local_ocr, resolve_image_evidence
 from ingest import load_dataset
+from ledger import normalize_ledger_input
 from relationships import build_relationship_graph
 
 
@@ -63,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Build and print the aggregate relationship audit without writing files.",
     )
+    parser.add_argument(
+        "--extract-images",
+        action="store_true",
+        help="Resolve image-backed blank amounts with local OCR and report blocked evidence.",
+    )
     return parser
 
 
@@ -88,14 +95,24 @@ def parse_config(argv: list[str] | None = None) -> RunConfig:
         dry_run=args.dry_run,
         check_inputs=args.check_inputs,
         audit_data=args.audit_data,
+        extract_images=args.extract_images,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the Step 1 scaffold and return a stable process exit code."""
     config = parse_config(argv)
-    if config.check_inputs or config.audit_data:
+    if config.check_inputs or config.audit_data or config.extract_images:
         dataset = load_dataset(config.dataset_dir)
+        if config.extract_images:
+            report = resolve_image_evidence(
+                dataset=dataset,
+                normalized=normalize_ledger_input(dataset),
+                image_directory=config.dataset_dir / "media" / "images",
+                ocr_engine=available_local_ocr(),
+            )
+            print(report.render())
+            return 0
         if config.audit_data:
             print(build_relationship_graph(dataset).audit.render())
             return 0

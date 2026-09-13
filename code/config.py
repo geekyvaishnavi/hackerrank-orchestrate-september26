@@ -18,6 +18,7 @@ class RunConfig:
     dry_run: bool
     check_inputs: bool
     audit_data: bool
+    extract_images: bool
 
 
 def validate_dataset_dir(dataset_dir: Path) -> None:
